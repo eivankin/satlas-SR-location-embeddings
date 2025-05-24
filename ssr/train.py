@@ -92,7 +92,7 @@ def train_pipeline(root_path):
 
     for epoch in range(start_epoch, total_epochs + 1):
         # TODO: this should only happen if not using our weighted tile sampler
-        #train_sampler.set_epoch(epoch)
+        train_sampler.set_epoch(epoch)
         prefetcher.reset()
         train_data = prefetcher.next()
 
