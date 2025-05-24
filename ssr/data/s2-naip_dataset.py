@@ -12,7 +12,7 @@ import rasterio
 
 from basicsr.utils.registry import DATASET_REGISTRY
 
-from ssr.utils.data_utils import has_black_pixels
+from ssr.utils.data_utils import has_black_pixels, get_random_nonzero_extent
 
 random.seed(123)
 
@@ -110,6 +110,7 @@ class S2NAIPDataset(data.Dataset):
             # Extract the X,Y chip from this NAIP image filepath.
             split_path = n.split('/')
             chip = split_path[-2]
+            tile = split_path[-1][:-4]  # remove the .tif extension
 
             # If old_hr_path is specified, grab an old high-res image (NAIP) for the current datapoint.
             if self.old_naip_path is not None:
@@ -121,11 +122,11 @@ class S2NAIPDataset(data.Dataset):
             #         continue
 
             # Gather the filepaths to the Sentinel-2 bands specified in the config.
-            s2_paths = [os.path.join(self.s2_path, chip, '.tif')]
+            s2_paths = [os.path.join(self.s2_path, chip, tile + '.tif')]
 
             osm_path = None
             if self.osm_objs_path is not None:
-                osm_path = os.path.join(self.osm_objs_path, chip, '.geojson')
+                osm_path = os.path.join(self.osm_objs_path, chip, tile + '.geojson')
 
             # Return the low-res, high-res, chip (ex. 12345_67890), and [optionally] older high-res image paths. 
             if self.old_naip_path:
@@ -176,18 +177,26 @@ class S2NAIPDataset(data.Dataset):
                 naip_path, s2_paths, zoom17_tile, osm_path = datapoint[0], datapoint[1], datapoint[2], datapoint[3]
 
             # Load the 128x128 NAIP chip in as a tensor of shape [channels, height, width].
-            naip_chip = torchvision.io.read_image(naip_path)
+            num_naip_bands = min(len(self.s2_bands), 4)
+            naip_chip = torchvision.io.read_image(naip_path)[:num_naip_bands, :, :]
+
+            rand_hr_x1, rand_hr_x2, rand_hr_y1, rand_hr_y2 = 0, 0, 128, 128
+            if self.rand_crop:
+                rand_hr_x1, rand_hr_x2, rand_hr_y1, rand_hr_y2 = get_random_nonzero_extent(naip_chip)
+
+            rand_lr_x1, rand_lr_x2, rand_lr_y1, rand_lr_y2 = map(lambda x: int(x / self.scale), [rand_hr_x1, rand_hr_x2, rand_hr_y1, rand_hr_y2])
+            naip_chip = naip_chip[:, rand_hr_x1:rand_hr_x2, rand_hr_y1:rand_hr_y2]
 
             # Check for black pixels (almost certainly invalid) and skip if found.
-            if has_black_pixels(naip_chip) and not self.rand_crop:  # NEW: we will remove black pixels in rand_crop mode
-                counter += 1
-                continue
+            if has_black_pixels(naip_chip):
+                # counter += 1
+                # continue
+                raise ValueError(f"NAIP image {naip_path} contains black pixels")
             img_HR = naip_chip
 
             # Load the T*32x32xC S2 files for each band in as a tensor.
             # There are a few rare cases where loading the Sentinel-2 image fails, skip if found.
             try:
-                # FIXME
                 s2_tensor = None
                 for i,s2_path in enumerate(s2_paths):
 
@@ -199,7 +208,8 @@ class S2NAIPDataset(data.Dataset):
                     else:
                         # s2_img = torchvision.io.read_image(s2_path)
                         with rasterio.open(s2_path) as src:
-                            s2_img = src.read(self.s2_bands)
+                            s2_img = torch.from_numpy(src.read(self.s2_bands))
+                            s2_img = s2_img[:, rand_lr_x1:rand_lr_x2, rand_lr_y1:rand_lr_y2]
 
                         s2_img = torch.reshape(s2_img, (s2_img.shape[0], -1, 32, 32)).permute(1,0,2,3)
                         assert s2_img.shape == (self.n_s2_images, len(self.s2_bands), 32, 32), s2_img.shape # todo: remove
@@ -208,9 +218,11 @@ class S2NAIPDataset(data.Dataset):
                         s2_tensor = s2_img
                     else:
                         s2_tensor = torch.cat((s2_tensor, s2_img), dim=1)
-            except:
-                counter += 1
-                continue
+            except Exception as e:
+                raise e
+                # counter += 1
+                # print("s2 failed")
+                # continue
 
             # Skip the cases when there are not as many Sentinel-2 images as requested.
             if s2_tensor.shape[0] < self.n_s2_images:
@@ -240,14 +252,13 @@ class S2NAIPDataset(data.Dataset):
 
             # If the rand_crop augmentation is specified (during training only), randomly pick size in [24,32]
             # and randomly crop the LR and HR images to their respective sizes, then resize back to 32x32 / 128x128.
-            if self.rand_crop:
-                # FIXME: crop black pixels from NAIP
-                rand_lr_size = random.randint(24, 32)
-                rand_hr_size = int(rand_lr_size * 4)
-                img_S2_cropped = img_S2[:, :, :rand_lr_size, :rand_lr_size]
-                img_HR_cropped = img_HR[:, :rand_hr_size, :rand_hr_size]
-                img_S2 = F.interpolate(img_S2_cropped, (32,32))
-                img_HR = F.interpolate(img_HR_cropped.unsqueeze(0), (128,128)).squeeze(0)  # need to unsqueeze tensor for interpolation to work, then squeeze
+            # if self.rand_crop:
+            #     rand_lr_size = random.randint(24, 32)
+            #     rand_hr_size = int(rand_lr_size * 4)
+            #     img_S2_cropped = img_S2[:, :, :rand_lr_size, :rand_lr_size]
+            #     img_HR_cropped = img_HR[:, :rand_hr_size, :rand_hr_size]
+            #     img_S2 = F.interpolate(img_S2_cropped, (32,32))
+            #     img_HR = F.interpolate(img_HR_cropped.unsqueeze(0), (128,128)).squeeze(0)  # need to unsqueeze tensor for interpolation to work, then squeeze
 
             # If using a model that expects 5 dimensions, we will not reshape to 4 dimensions.
             if not self.use_3d:
@@ -290,7 +301,8 @@ class S2NAIPDataset(data.Dataset):
                             bbox = [x1, y1, x2, y2]
                             bbox = [int(coord / naip_downscale_factor) for coord in bbox]  # convert to 256x256 coordinates
                             osm_json.setdefault(category, []).append(bbox)
-
+                        # if max_features > 0 and len(osm_json[category]) >= max_features:
+                        #     break
             return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': osm_json}
 
     def __len__(self):
