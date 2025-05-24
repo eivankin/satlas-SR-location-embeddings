@@ -38,8 +38,8 @@ class OSMObjESRGANModel(SRGANModel):
         self.usm_sharpener = USMSharp().cuda()
 
         # Load in the big json containing maps from chips to OSM object bounds.
-        osm_file = open(opt['datasets']['train']['osm_objs_path'])
-        self.osm_obj_data = json.load(osm_file)
+        # osm_file = open(opt['datasets']['train']['osm_objs_path'])
+        # self.osm_obj_data = json.load(osm_file)
 
         # OSM Obj ESRGAN-specific config arguments.
         self.osm_obj_weight = opt['osm_obj_weight']
