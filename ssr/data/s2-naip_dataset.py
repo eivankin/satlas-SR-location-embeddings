@@ -8,6 +8,7 @@ import numpy as np
 import torch.nn.functional as F
 from torch.utils import data as data
 from torch.utils.data import WeightedRandomSampler
+import rasterio
 
 from basicsr.utils.registry import DATASET_REGISTRY
 
@@ -67,12 +68,12 @@ class S2NAIPDataset(data.Dataset):
         self.old_naip_path = opt['old_naip_path'] if 'old_naip_path' in opt else None
 
         # Path to osm_chips_to_masks.json if provided. 
-        self.osm_chips_to_masks = opt['osm_objs_path'] if 'osm_objs_path' in opt else None
+        self.osm_objs_path = opt['osm_objs_path'] if 'osm_objs_path' in opt else None
 
         # Sentinel-2 bands to be used as input. Default to just using tci.
-        self.s2_bands = opt['s2_bands'] if 's2_bands' in opt else ['tci']
+        self.s2_bands = opt['s2_bands'] if 's2_bands' in opt else [3, 2, 1] # RGB
         # Move tci to front of list for later logic.
-        self.s2_bands.insert(0, self.s2_bands.pop(self.s2_bands.index('tci')))
+        # self.s2_bands.insert(0, self.s2_bands.pop(self.s2_bands.index('tci')))
 
         # If a path to older NAIP imagery is provided, build dictionary of each chip:path to png.
         if self.old_naip_path is not None:
@@ -86,9 +87,9 @@ class S2NAIPDataset(data.Dataset):
 
         # If a path to osm_chips_to_masks.json is provided, we want to filter out datapoints where
         # there is not at least n_osm_objs objects in the NAIP image.
-        if self.osm_chips_to_masks is not None and train:
-            osm_obj_data = json.load(open(self.osm_chips_to_masks))
-            print("Loaded osm_chip_to_masks.json with ", len(osm_obj_data), " entries.")
+        # if self.osm_chips_to_masks is not None and train:
+        #     osm_obj_data = json.load(open(self.osm_chips_to_masks))
+        #     print("Loaded osm_chip_to_masks.json with ", len(osm_obj_data), " entries.")
 
         # Paths to Sentinel-2 and NAIP imagery.
         self.s2_path = opt['sentinel2_path']
@@ -97,6 +98,8 @@ class S2NAIPDataset(data.Dataset):
             raise Exception("Please make sure the paths to the data directories are correct.")
 
         self.naip_chips = glob.glob(self.naip_path + '/**/*.png', recursive=True)
+        if self.osm_objs_path is not None:
+            self.osm_chips = glob.glob(self.osm_objs_path + '/**/*.geojson', recursive=True)
 
         # Reduce the training set down to a specified number of samples. If not specified, whole set is used.
         if 'train_samples' in opt and train:
@@ -113,18 +116,22 @@ class S2NAIPDataset(data.Dataset):
                 old_chip = old_naip_chips[chip][0]
 
             # If using OSM Object ESRGAN, filter dataset to only include images containing OpenStreetMap objects.
-            if self.osm_chips_to_masks is not None and train:
-                if not (chip in osm_obj_data and sum([len(osm_obj_data[chip][k]) for k in osm_obj_data[chip].keys()]) >= opt['n_osm_objs']):
-                    continue
+            # if self.osm_chips_to_masks is not None and train:
+            #     if not (chip in osm_obj_data and sum([len(osm_obj_data[chip][k]) for k in osm_obj_data[chip].keys()]) >= opt['n_osm_objs']):
+            #         continue
 
             # Gather the filepaths to the Sentinel-2 bands specified in the config.
-            s2_paths = [os.path.join(self.s2_path, chip, band + '.png') for band in self.s2_bands]
+            s2_paths = [os.path.join(self.s2_path, chip, '.tif')]
+
+            osm_path = None
+            if self.osm_objs_path is not None:
+                osm_path = os.path.join(self.osm_objs_path, chip, '.geojson')
 
             # Return the low-res, high-res, chip (ex. 12345_67890), and [optionally] older high-res image paths. 
             if self.old_naip_path:
                 self.datapoints.append([n, s2_paths, chip, old_chip])
             else:
-                self.datapoints.append([n, s2_paths, chip])
+                self.datapoints.append([n, s2_paths, chip, osm_path])
 
         self.data_len = len(self.datapoints)
         print("Number of datapoints for split ", self.split, ": ", self.data_len)
@@ -153,7 +160,8 @@ class S2NAIPDataset(data.Dataset):
 
         # A while loop and try/excepts to catch a few images that we want to ignore during 
         # training but do not necessarily want to remove from the dataset, such as the
-        # ground truth NAIP image being partially invalid (all black). 
+        # ground truth NAIP image being partially invalid (all black).
+        osm_path = None
         counter = 0
         while True:
             index += counter  # increment the index based on what errors have been caught
@@ -165,13 +173,13 @@ class S2NAIPDataset(data.Dataset):
             if self.old_naip_path:
                 naip_path, s2_paths, zoom17_tile, old_naip_path = datapoint[0], datapoint[1], datapoint[2], datapoint[3]
             else:
-                naip_path, s2_paths, zoom17_tile = datapoint[0], datapoint[1], datapoint[2]
+                naip_path, s2_paths, zoom17_tile, osm_path = datapoint[0], datapoint[1], datapoint[2], datapoint[3]
 
             # Load the 128x128 NAIP chip in as a tensor of shape [channels, height, width].
             naip_chip = torchvision.io.read_image(naip_path)
 
             # Check for black pixels (almost certainly invalid) and skip if found.
-            if has_black_pixels(naip_chip):
+            if has_black_pixels(naip_chip) and not self.rand_crop:  # NEW: we will remove black pixels in rand_crop mode
                 counter += 1
                 continue
             img_HR = naip_chip
@@ -179,16 +187,22 @@ class S2NAIPDataset(data.Dataset):
             # Load the T*32x32xC S2 files for each band in as a tensor.
             # There are a few rare cases where loading the Sentinel-2 image fails, skip if found.
             try:
+                # FIXME
                 s2_tensor = None
                 for i,s2_path in enumerate(s2_paths):
 
                     # There are tiles where certain bands aren't available, use zero tensors in this case.
                     if not os.path.exists(s2_path):
-                        img_size = (self.n_s2_images, 3, 32, 32) if 'tci' in s2_path else (self.n_s2_images, 1, 32, 32)
-                        s2_img = torch.zeros(img_size, dtype=torch.uint8)
+                        raise ValueError(f"Sentinel-2 file not found: {s2_path}")
+                        # img_size = (self.n_s2_images, 3, 32, 32) if 'tci' in s2_path else (self.n_s2_images, 1, 32, 32)
+                        # s2_img = torch.zeros(img_size, dtype=torch.uint8)
                     else:
-                        s2_img = torchvision.io.read_image(s2_path)
+                        # s2_img = torchvision.io.read_image(s2_path)
+                        with rasterio.open(s2_path) as src:
+                            s2_img = src.read(self.s2_bands)
+
                         s2_img = torch.reshape(s2_img, (s2_img.shape[0], -1, 32, 32)).permute(1,0,2,3)
+                        assert s2_img.shape == (self.n_s2_images, len(self.s2_bands), 32, 32), s2_img.shape # todo: remove
 
                     if i == 0:
                         s2_tensor = s2_img
@@ -227,6 +241,7 @@ class S2NAIPDataset(data.Dataset):
             # If the rand_crop augmentation is specified (during training only), randomly pick size in [24,32]
             # and randomly crop the LR and HR images to their respective sizes, then resize back to 32x32 / 128x128.
             if self.rand_crop:
+                # FIXME: crop black pixels from NAIP
                 rand_lr_size = random.randint(24, 32)
                 rand_hr_size = int(rand_lr_size * 4)
                 img_S2_cropped = img_S2[:, :, :rand_lr_size, :rand_lr_size]
@@ -243,7 +258,40 @@ class S2NAIPDataset(data.Dataset):
                 img_old_HR = old_naip_chip
                 return {'hr': img_HR, 'lr': img_S2, 'old_hr': img_old_HR, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile}
 
-            return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile}
+            osm_json = None
+            naip_downscale_factor = 2  # S2-NAIP uses coordinates tied to 512x512 for OSM, we want 256x256
+            if osm_path is not None:
+                with open(osm_path) as f:
+                    # Convert the format:
+                    # 1. extract bbox of each feature,
+                    # 2. convert coordinates to int so we can crop images later using them.
+                    # Format should be the following: {category_name: [[x1, y1, x2, y2], ...], ...}.
+                    # Include only polygon-type (Polygon, MultiPolygon) features like buildings.
+                    osm_json_raw = json.load(f)
+                    osm_json = {}
+                    for feature in osm_json_raw.get('features', []):
+                        geom_type = feature.get('geometry', {}).get('type', '')
+                        if geom_type not in ['Polygon', 'MultiPolygon']:
+                            continue
+                        category = feature.get('properties', {}).get('category', 'unknown')
+                        # Extract all polygons (MultiPolygon is a list of polygons)
+                        coords_list = []
+                        if geom_type == 'Polygon':
+                            coords_list = [feature['geometry']['coordinates']]
+                        elif geom_type == 'MultiPolygon':
+                            coords_list = feature['geometry']['coordinates']
+                        for poly in coords_list:
+                            # poly is a list of linear rings, take the exterior ring (first)
+                            exterior = poly[0]
+                            xs = [int(round(pt[0])) for pt in exterior]
+                            ys = [int(round(pt[1])) for pt in exterior]
+                            x1, x2 = min(xs), max(xs)
+                            y1, y2 = min(ys), max(ys)
+                            bbox = [x1, y1, x2, y2]
+                            bbox = [int(coord / naip_downscale_factor) for coord in bbox]  # convert to 256x256 coordinates
+                            osm_json.setdefault(category, []).append(bbox)
+
+            return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': osm_json}
 
     def __len__(self):
         return self.data_len

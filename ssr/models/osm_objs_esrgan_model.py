@@ -132,8 +132,12 @@ class OSMObjESRGANModel(SRGANModel):
         self.feed_disc_lr = True if ('feed_disc_lr' in self.opt and self.opt['feed_disc_lr']) else False
 
         # List of dictionaries of objects for each chip in this batch. Only for training.
-        if data['Phase'][0] == 'train':
-            self.chip_objs = [self.osm_obj_data[data['Chip'][c]] for c in range(len(data['Chip']))]
+        # if data['Phase'][0] == 'train':
+        #     self.chip_objs = [self.osm_obj_data[data['Chip'][c]] for c in range(len(data['Chip']))]
+        # else:
+        #     self.chip_objs = []
+        if 'osm' in data:
+            self.chip_objs = data['osm']
         else:
             self.chip_objs = []
 
@@ -160,7 +164,7 @@ class OSMObjESRGANModel(SRGANModel):
         self.optimizer_g.zero_grad()
         self.output = self.net_g(self.lr)
 
-        # Extract OSM objects in this chip and resize them to standard size.
+        # Extract OSM objects in this chip and resize them to standard size. FIXME
         gt_extracted_objs = []
         gen_extracted_objs = []
         for b in range(gan_gt.shape[0]):
