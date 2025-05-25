@@ -72,8 +72,11 @@ class S2NAIPDataset(data.Dataset):
 
         # Sentinel-2 bands to be used as input. Default to just using tci.
         self.s2_bands = opt['s2_bands'] if 's2_bands' in opt else [3, 2, 1] # RGB
-        # Move tci to front of list for later logic.
-        # self.s2_bands.insert(0, self.s2_bands.pop(self.s2_bands.index('tci')))
+        self.naip_bands = opt.get('naip_bands', [0, 1, 2])
+
+        self.plot_inputs = opt.get('plot_inputs', False)
+
+        self.use_loc_match = opt.get('use_loc_match', False)
 
         # If a path to older NAIP imagery is provided, build dictionary of each chip:path to png.
         if self.old_naip_path is not None:
@@ -163,6 +166,7 @@ class S2NAIPDataset(data.Dataset):
         # training but do not necessarily want to remove from the dataset, such as the
         # ground truth NAIP image being partially invalid (all black).
         osm_path = None
+        coordinates = (0, 0)  # TODO: extract geo coords from chip name
         counter = 0
         while True:
             index += counter  # increment the index based on what errors have been caught
@@ -179,8 +183,8 @@ class S2NAIPDataset(data.Dataset):
             # naip_path = "custom_dataset/prepared/train/naip/32614_30_-164/32614_968_-5233.png"
 
             # Load the 128x128 NAIP chip in as a tensor of shape [channels, height, width].
-            num_naip_bands = min(len(self.s2_bands), 4)
-            naip_chip = torchvision.io.read_image(naip_path)[:num_naip_bands, :, :]
+            # num_naip_bands = min(len(self.s2_bands), 4)
+            naip_chip = torchvision.io.read_image(naip_path)[self.naip_bands, :, :]
 
             rand_hr_x1, rand_hr_x2, rand_hr_y1, rand_hr_y2 = 0, 128, 0, 128
             if self.rand_crop:
@@ -313,15 +317,15 @@ class S2NAIPDataset(data.Dataset):
                                 osm_json.setdefault(category, []).append(bbox)
                             # if max_features > 0 and len(osm_json[category]) >= max_features:
                             #     break
-            if False and osm_json and random.random() < 0.05:
+            if self.plot_inputs and osm_json and random.random() < 0.05:
                 import matplotlib.pyplot as plt
                 # Draw LR, HR and OSM bboxes (different colors for each category)
                 # Save plot as png {phase}_{index}.png
                 fig, axs = plt.subplots(1, 2, figsize=(10, 5))
                 axs[0].imshow(img_S2.permute(1, 2, 0).cpu().numpy())
-                axs[0].set_title(f'LR (S2) ({rand_lr_x1}, {rand_lr_y1}, {rand_lr_x2}, {rand_lr_y2})')
+                axs[0].set_title(f'LR (S2) | crop ({rand_lr_x1}, {rand_lr_y1}, {rand_lr_x2}, {rand_lr_y2}) | channels {self.s2_bands}')
                 axs[1].imshow(img_HR.permute(1, 2, 0).cpu().numpy())
-                axs[1].set_title(f'HR (NAIP) ({rand_hr_x1}, {rand_hr_y1}, {rand_hr_x2}, {rand_hr_y2})')
+                axs[1].set_title(f'HR (NAIP) | crop ({rand_hr_x1}, {rand_hr_y1}, {rand_hr_x2}, {rand_hr_y2}) | channels {self.naip_bands}')
 
                 colors = ['r', 'b', 'y', 'm', 'c']
                 for idx, (cat, bboxes) in enumerate(osm_json.items()):
@@ -339,7 +343,8 @@ class S2NAIPDataset(data.Dataset):
                 plt.savefig(f'train_examples/{self.split}_{index}.png')
                 print(f'Saved {self.split}_{index}.png')
                 plt.close(fig)
-            return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': json.dumps(osm_json) if osm_json else "{}"}
+
+            return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': json.dumps(osm_json) if osm_json else "{}", "coords": torch.tensor(coordinates)}
 
     def __len__(self):
         return self.data_len
