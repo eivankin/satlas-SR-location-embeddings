@@ -18,7 +18,7 @@ def get_random_nonzero_extent(tensor, scale=4):
     """
     C, W, H = tensor.shape
     crop_size = 128
-    max_attempts = 100
+    max_attempts = 400
     for _ in range(max_attempts):
         x1 = torch.randint(0, W - crop_size + 1, (1,)).item()
         y1 = torch.randint(0, H - crop_size + 1, (1,)).item()
