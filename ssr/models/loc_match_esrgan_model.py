@@ -287,14 +287,14 @@ class LocMatchESRGANModel(SRGANModel):
 
                 # SatCLIP model should be loaded and assigned as self.satclip_model
                 # coords: (B, 2) float tensor (lat, lon)
-                loc_emb = self.satclip_model(coords.double().to(self.device))  # (B, emb_dim)
+                loc_emb = self.satclip_model(coords.double().to(self.device)).float()  # (B, emb_dim)
 
                 # Sample false coordinates: random from batch, add noise
                 rand_idx = torch.randint(0, B, (B,), device=coords.device)
                 false_coords = coords[rand_idx].clone()
                 noise = torch.randn_like(false_coords) * 2.0  # a few degrees
                 false_coords += noise
-                false_loc_emb = self.satclip_model(false_coords.double().to(self.device))
+                false_loc_emb = self.satclip_model(false_coords.double().to(self.device)).float()
 
                 # Real HR with correct location
                 real_score = self.net_d.loc_matching(gan_gt, loc_emb)
@@ -345,7 +345,7 @@ class LocMatchESRGANModel(SRGANModel):
         self.optimizer_d.zero_grad()
 
         # real
-        real_d_pred, real_obj_pred = self.net_d(real_disc_input, gt_objs)
+        real_d_pred, real_obj_pred = self.net_d.osm_obj(real_disc_input, gt_objs)
         real_obj_pred_avg = real_obj_pred.squeeze(-1).squeeze(-1)
         # real OSM object prediction
         l_d_real_objs = self.osm_obj_weight * self.cri_gan(real_obj_pred_avg, True, is_disc=True)
@@ -358,7 +358,7 @@ class LocMatchESRGANModel(SRGANModel):
         l_d_real.backward()
 
         # fake
-        fake_d_pred, fake_obj_pred = self.net_d(fake_disc_input.detach().clone(), gen_objs.detach().clone())  # clone for pt1.9
+        fake_d_pred, fake_obj_pred = self.net_d.osm_obj(fake_disc_input.detach().clone(), gen_objs.detach().clone())  # clone for pt1.9
         fake_obj_pred_avg = fake_obj_pred.squeeze(-1).squeeze(-1)
         # fake OSM object prediction
         l_d_fake_objs = self.osm_obj_weight * self.cri_gan(fake_obj_pred_avg, True, is_disc=True)

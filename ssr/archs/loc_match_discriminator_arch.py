@@ -54,7 +54,7 @@ class DoubleDiscriminator(nn.Module):
     def __init__(self, num_in_ch=3, num_feat=64, n_blocks=4, satclip_emb_dim=256, proj_dim=512, skip_connection=True):
         super(DoubleDiscriminator, self).__init__()
         self.loc_matching_discriminator = LocationMatchingDiscriminator(
-            num_in_ch, num_feat, n_blocks, satclip_emb_dim, proj_dim
+            3, num_feat, n_blocks, satclip_emb_dim, proj_dim
         )
         self.osm_obj_discriminator = OSMObjDiscriminator(
             num_in_ch=num_in_ch, num_feat=num_feat, skip_connection=skip_connection)
