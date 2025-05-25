@@ -9,6 +9,9 @@ import torch.nn.functional as F
 from torch.utils import data as data
 from torch.utils.data import WeightedRandomSampler
 import rasterio
+import shapely
+from rasterio.crs import CRS
+from rasterio.warp import transform_geom
 
 from basicsr.utils.registry import DATASET_REGISTRY
 
@@ -31,6 +34,20 @@ class CustomWeightedRandomSampler(WeightedRandomSampler):
                                        replace=self.replacement)
         rand_tensor = torch.from_numpy(rand_tensor)
         return iter(rand_tensor.tolist())
+
+def tile_to_point(utm_zone: int, row: int, col: int, size: int = 512, pixel_size: float = 1.25):
+    x = (-col * size * pixel_size) - (size * pixel_size / 2)
+    y = (row * size * pixel_size) + (size * pixel_size / 2)
+    return shapely.Point(y, x)
+
+def utm_to_wgs84(geometry, utm_zone: int):
+    try:
+        src_crs = CRS.from_epsg(utm_zone)
+        dst_crs = CRS.from_epsg(4326)
+        return shapely.geometry.shape(transform_geom(src_crs, dst_crs, geometry))
+    except Exception as e:
+        print(f"Warning: Failed to transform point {geometry} in zone {utm_zone}: {str(e)}")
+        return None
 
 @DATASET_REGISTRY.register()
 class S2NAIPDataset(data.Dataset):
@@ -75,8 +92,6 @@ class S2NAIPDataset(data.Dataset):
         self.naip_bands = opt.get('naip_bands', [0, 1, 2])
 
         self.plot_inputs = opt.get('plot_inputs', False)
-
-        self.use_loc_match = opt.get('use_loc_match', False)
 
         # If a path to older NAIP imagery is provided, build dictionary of each chip:path to png.
         if self.old_naip_path is not None:
@@ -166,7 +181,7 @@ class S2NAIPDataset(data.Dataset):
         # training but do not necessarily want to remove from the dataset, such as the
         # ground truth NAIP image being partially invalid (all black).
         osm_path = None
-        coordinates = (0, 0)  # TODO: extract geo coords from chip name
+        coordinates = (0.0, 0.0)
         counter = 0
         while True:
             index += counter  # increment the index based on what errors have been caught
@@ -179,6 +194,26 @@ class S2NAIPDataset(data.Dataset):
                 naip_path, s2_paths, zoom17_tile, old_naip_path = datapoint[0], datapoint[1], datapoint[2], datapoint[3]
             else:
                 naip_path, s2_paths, zoom17_tile, osm_path = datapoint[0], datapoint[1], datapoint[2], datapoint[3]
+
+            chip_name = naip_path.split('/')[-1][:-4]
+
+            # --- Extract geo coordinates from chip name using logic from points_from_splits.py ---
+            # chip name format: "{utm_zone}_{row}_{col}"
+            try:
+                chip_parts = chip_name.split("_")
+                if len(chip_parts) == 3:
+                    utm_zone = int(chip_parts[0])
+                    row = int(chip_parts[1])
+                    col = int(chip_parts[2])
+                    point = tile_to_point(utm_zone, row, col)
+                    wgs84_point = utm_to_wgs84(point, utm_zone)
+                    if wgs84_point is not None:
+                        coordinates = (wgs84_point.y, wgs84_point.x)  # lat, lon
+            except Exception as e:
+                print(f"Failed to extract coordinates from chip {zoom17_tile}/{chip_name}: {e}")
+                coordinates = (0.0, 0.0)
+
+            # --- end geo extraction ---
 
             # naip_path = "custom_dataset/prepared/train/naip/32614_30_-164/32614_968_-5233.png"
 
@@ -256,16 +291,6 @@ class S2NAIPDataset(data.Dataset):
 
             # Extract the self.n_s2_images from the first dimension.
             img_S2 = s2_tensor[rand_indices_tensor]
-
-            # If the rand_crop augmentation is specified (during training only), randomly pick size in [24,32]
-            # and randomly crop the LR and HR images to their respective sizes, then resize back to 32x32 / 128x128.
-            # if self.rand_crop:
-            #     rand_lr_size = random.randint(24, 32)
-            #     rand_hr_size = int(rand_lr_size * 4)
-            #     img_S2_cropped = img_S2[:, :, :rand_lr_size, :rand_lr_size]
-            #     img_HR_cropped = img_HR[:, :rand_hr_size, :rand_hr_size]
-            #     img_S2 = F.interpolate(img_S2_cropped, (32,32))
-            #     img_HR = F.interpolate(img_HR_cropped.unsqueeze(0), (128,128)).squeeze(0)  # need to unsqueeze tensor for interpolation to work, then squeeze
 
             # If using a model that expects 5 dimensions, we will not reshape to 4 dimensions.
             if not self.use_3d:
