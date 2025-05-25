@@ -279,32 +279,33 @@ class S2NAIPDataset(data.Dataset):
                     # Format should be the following: {category_name: [[x1, y1, x2, y2], ...], ...}.
                     # Include only polygon-type (Polygon, MultiPolygon) features like buildings.
                     osm_json_raw = json.load(f)
-                    osm_json = {}
-                    for feature in osm_json_raw.get('features', []):
-                        geom_type = feature.get('geometry', {}).get('type', '')
-                        if geom_type not in ['Polygon', 'MultiPolygon']:
-                            continue
-                        category = feature.get('properties', {}).get('category', 'unknown')
-                        # Extract all polygons (MultiPolygon is a list of polygons)
-                        coords_list = []
-                        if geom_type == 'Polygon':
-                            coords_list = [feature['geometry']['coordinates']]
-                        elif geom_type == 'MultiPolygon':
-                            coords_list = feature['geometry']['coordinates']
-                        for poly in coords_list:
-                            # poly is a list of linear rings, take the exterior ring (first)
-                            exterior = poly[0]
-                            xs = [int(round(pt[0])) for pt in exterior]
-                            ys = [int(round(pt[1])) for pt in exterior]
-                            if not xs or not ys:
+                    if osm_json_raw:
+                        osm_json = {}
+                        for feature in osm_json_raw.get('features', []):
+                            geom_type = feature.get('geometry', {}).get('type', '')
+                            if geom_type not in ['Polygon', 'MultiPolygon']:
                                 continue
-                            x1, x2 = min(xs), max(xs)
-                            y1, y2 = min(ys), max(ys)
-                            bbox = [x1, y1, x2, y2]
-                            bbox = [int(coord / naip_downscale_factor) for coord in bbox]  # convert to 256x256 coordinates
-                            osm_json.setdefault(category, []).append(bbox)
-                        # if max_features > 0 and len(osm_json[category]) >= max_features:
-                        #     break
+                            category = feature.get('properties', {}).get('category', 'unknown')
+                            # Extract all polygons (MultiPolygon is a list of polygons)
+                            coords_list = []
+                            if geom_type == 'Polygon':
+                                coords_list = [feature['geometry']['coordinates']]
+                            elif geom_type == 'MultiPolygon':
+                                coords_list = feature['geometry']['coordinates']
+                            for poly in coords_list:
+                                # poly is a list of linear rings, take the exterior ring (first)
+                                exterior = poly[0]
+                                xs = [int(round(pt[0])) for pt in exterior]
+                                ys = [int(round(pt[1])) for pt in exterior]
+                                if not xs or not ys:
+                                    continue
+                                x1, x2 = min(xs), max(xs)
+                                y1, y2 = min(ys), max(ys)
+                                bbox = [x1, y1, x2, y2]
+                                bbox = [int(coord / naip_downscale_factor) for coord in bbox]  # convert to 256x256 coordinates
+                                osm_json.setdefault(category, []).append(bbox)
+                            # if max_features > 0 and len(osm_json[category]) >= max_features:
+                            #     break
             return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': osm_json}
 
     def __len__(self):
