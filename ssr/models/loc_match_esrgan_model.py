@@ -381,11 +381,11 @@ class LocMatchESRGANModel(SRGANModel):
         if hasattr(self, 'net_g_ema'):
             self.net_g_ema.eval()
             with torch.no_grad():
-                self.output = self.net_g_ema(self.lr)
+                self.output = self.net_g_ema(self.lr, self.coords, self.satclip_model)
         else:
             self.net_g.eval()
             with torch.no_grad():
-                self.output = self.net_g(self.lr)
+                self.output = self.net_g(self.lr, self.coords, self.satclip_model)
             self.net_g.train()
 
     def get_current_visuals(self):
