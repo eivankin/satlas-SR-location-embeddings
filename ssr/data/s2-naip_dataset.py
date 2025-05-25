@@ -296,6 +296,8 @@ class S2NAIPDataset(data.Dataset):
                             exterior = poly[0]
                             xs = [int(round(pt[0])) for pt in exterior]
                             ys = [int(round(pt[1])) for pt in exterior]
+                            if not xs or not ys:
+                                continue
                             x1, x2 = min(xs), max(xs)
                             y1, y2 = min(ys), max(ys)
                             bbox = [x1, y1, x2, y2]
