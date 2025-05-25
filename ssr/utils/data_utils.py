@@ -18,11 +18,12 @@ def get_random_nonzero_extent(tensor, scale=4):
     """
     C, W, H = tensor.shape
     crop_size = 128
-    max_attempts = 1000
+    max_attempts = 100
     for _ in range(max_attempts):
         x1 = torch.randint(0, W - crop_size + 1, (1,)).item()
         y1 = torch.randint(0, H - crop_size + 1, (1,)).item()
         crop = tensor[:, x1:x1+crop_size, y1:y1+crop_size]
         if x1 % scale == 0 and y1 % scale == 0 and not has_black_pixels(crop):
             return (x1, x1+crop_size, y1, y1+crop_size)
-    raise ValueError(f"No non-black 128x128 crop found after {max_attempts} attempts")
+    return (x1, x1 + crop_size, y1, y1 + crop_size)
+    # raise ValueError(f"No non-black 128x128 crop found after {max_attempts} attempts")

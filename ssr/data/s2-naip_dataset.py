@@ -176,6 +176,8 @@ class S2NAIPDataset(data.Dataset):
             else:
                 naip_path, s2_paths, zoom17_tile, osm_path = datapoint[0], datapoint[1], datapoint[2], datapoint[3]
 
+            # naip_path = "custom_dataset/prepared/train/naip/32614_30_-164/32614_968_-5233.png"
+
             # Load the 128x128 NAIP chip in as a tensor of shape [channels, height, width].
             num_naip_bands = min(len(self.s2_bands), 4)
             naip_chip = torchvision.io.read_image(naip_path)[:num_naip_bands, :, :]
@@ -191,7 +193,8 @@ class S2NAIPDataset(data.Dataset):
             if has_black_pixels(naip_chip):
                 # counter += 1
                 # continue
-                raise ValueError(f"NAIP image {naip_path} contains black pixels")
+                # raise ValueError(f"NAIP image {naip_path} contains black pixels")
+                ...
             img_HR = naip_chip
 
             # Load the T*32x32xC S2 files for each band in as a tensor.
