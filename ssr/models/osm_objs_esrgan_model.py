@@ -35,7 +35,7 @@ class OSMObjESRGANModel(SRGANModel):
 
     def __init__(self, opt):
         super(OSMObjESRGANModel, self).__init__(opt)
-        self.usm_sharpener = USMSharp() if self.device == "cpu" else USMSharp().cuda()
+        self.usm_sharpener = USMSharp() if self.device == torch.device("cpu") else USMSharp().cuda()
 
         # Load in the big json containing maps from chips to OSM object bounds.
         # osm_file = open(opt['datasets']['train']['osm_objs_path'])
