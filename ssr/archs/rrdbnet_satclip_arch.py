@@ -1,9 +1,9 @@
-from basicsr.utils.registry import ARCH_REGISTRY
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from basicsr.utils.registry import ARCH_REGISTRY
+from .rrdbnet_arch import RRDB
 
-# --- Self-Attention Block ---
 class SelfAttentionBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -23,7 +23,6 @@ class SelfAttentionBlock(nn.Module):
         out = out.view(B, C, H, W)
         return self.gamma * out + x
 
-# --- Cross-Attention Block ---
 class CrossAttentionBlock(nn.Module):
     def __init__(self, img_channels, emb_dim):
         super().__init__()
@@ -42,7 +41,6 @@ class CrossAttentionBlock(nn.Module):
         out = out.permute(0, 2, 1).view(B, C, H, W)
         return self.gamma * out + x
 
-# --- MLP Projection ---
 class MLPProjection(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim=128):
         super().__init__()
@@ -55,12 +53,64 @@ class MLPProjection(nn.Module):
     def forward(self, x):
         return self.mlp(x)
 
-# --- RRDB Block (import or define as in rrdbnet_arch.py) ---
-from .rrdbnet_arch import RRDB
-
-# --- Main Generator ---
 @ARCH_REGISTRY.register()
 class SSR_RRDBNet_LocAttn(nn.Module):
+    def __init__(
+        self,
+        num_in_ch,
+        num_out_ch,
+        scale=4,
+        num_feat=64,
+        num_block=23,
+        num_grow_ch=32,
+        satclip_emb_dim=256,
+        loc_emb_dim=64,
+    ):
+        super().__init__()
+        self.scale = scale
+        self.satclip_emb_dim = satclip_emb_dim
+        self.loc_emb_dim = loc_emb_dim
+
+        self.conv_first = nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
+        self.body = nn.Sequential(*[RRDB(num_feat, num_grow_ch) for _ in range(num_block)])
+        self.conv_body = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+
+        self.body_self_attn = SelfAttentionBlock(num_feat)  # Only one self-attention at low-res
+
+        self.loc_proj = MLPProjection(satclip_emb_dim, loc_emb_dim)
+
+        self.upsample_blocks = nn.ModuleList()
+        self.cross_attn_blocks = nn.ModuleList()
+        n_upsample = int(torch.log2(torch.tensor(scale)).item())
+        for _ in range(n_upsample):
+            self.upsample_blocks.append(nn.Conv2d(num_feat, num_feat, 3, 1, 1))
+            self.cross_attn_blocks.append(CrossAttentionBlock(num_feat, loc_emb_dim))
+
+        self.conv_hr = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+        self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+        self.lrelu = nn.LeakyReLU(0.2, inplace=True)
+
+    def forward(self, x, coords=None, satclip_model=None):
+        # x: (B, C, H, W), coords: (B, 2)
+        with torch.no_grad():
+            loc_emb = satclip_model(coords.double()).float()  # (B, satclip_emb_dim)
+        loc_emb = self.loc_proj(loc_emb)  # (B, loc_emb_dim)
+
+        feat = self.conv_first(x)
+        body_feat = self.conv_body(self.body(feat))
+        feat = feat + body_feat
+
+        feat = self.body_self_attn(feat)  # Self-attention at low-res only
+
+        for up, ca in zip(self.upsample_blocks, self.cross_attn_blocks):
+            feat = self.lrelu(up(F.interpolate(feat, scale_factor=2, mode='nearest')))
+            feat = ca(feat, loc_emb)
+
+        out = self.conv_last(self.lrelu(self.conv_hr(feat)))
+        return out
+
+@ARCH_REGISTRY.register()
+class SSR_RRDBNet_LocAttn_Big(nn.Module):
     def __init__(
         self,
         num_in_ch,
@@ -101,11 +151,6 @@ class SSR_RRDBNet_LocAttn(nn.Module):
         with torch.no_grad():
             loc_emb = satclip_model(coords.double()).float()  # (B, satclip_emb_dim)
         loc_emb = self.loc_proj(loc_emb)  # (B, loc_emb_dim)
-        # else:
-        #     # fallback: zeros if no location info
-        #     B = x.shape[0]
-        #     device = x.device
-        #     loc_emb = torch.zeros(B, self.loc_emb_dim, device=device)
 
         feat = self.conv_first(x)
         body_feat = self.conv_body(self.body(feat))
