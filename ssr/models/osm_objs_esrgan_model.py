@@ -35,7 +35,7 @@ class OSMObjESRGANModel(SRGANModel):
 
     def __init__(self, opt):
         super(OSMObjESRGANModel, self).__init__(opt)
-        self.usm_sharpener = USMSharp().cuda()
+        self.usm_sharpener = USMSharp() if self.device == "cpu" else USMSharp().cuda()
 
         # Load in the big json containing maps from chips to OSM object bounds.
         # osm_file = open(opt['datasets']['train']['osm_objs_path'])
@@ -137,7 +137,7 @@ class OSMObjESRGANModel(SRGANModel):
         # else:
         #     self.chip_objs = []
         if 'osm' in data:
-            self.chip_objs = data['osm']
+            self.chip_objs = [json.loads(j) for j in data['osm']]
         else:
             self.chip_objs = []
 
@@ -183,6 +183,10 @@ class OSMObjESRGANModel(SRGANModel):
                     gen_extract = self.output[b, :, y1:y2, x1:x2]
                     batch_gt.append(torchvision.transforms.functional.resize(gt_extract, (32,32)))
                     batch_gen.append(torchvision.transforms.functional.resize(gen_extract, (32,32)))
+
+            if not batch_gt:  # dirty hack to avoid empty lists: let D compare original tiles
+                batch_gt.append(gan_gt[b, :, :32, :32])
+                batch_gen.append(self.output[b, :, :32, :32])
 
             # list of lists of objects for each batch
             gt_extracted_objs.append(batch_gt)

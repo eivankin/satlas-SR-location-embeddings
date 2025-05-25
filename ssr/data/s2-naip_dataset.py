@@ -299,14 +299,18 @@ class S2NAIPDataset(data.Dataset):
                                 ys = [int(round(pt[1])) for pt in exterior]
                                 if not xs or not ys:
                                     continue
-                                x1, x2 = min(xs), max(xs)
-                                y1, y2 = min(ys), max(ys)
+                                x1, x2 = max(min(xs), rand_hr_x1), min(max(xs), rand_hr_x2)
+                                if x2 - x1 < 2:
+                                    continue
+                                y1, y2 = max(min(ys), rand_hr_y1), min(max(ys), rand_hr_y2)
+                                if y2 - y1 < 2:
+                                    continue
                                 bbox = [x1, y1, x2, y2]
                                 bbox = [int(coord / naip_downscale_factor) for coord in bbox]  # convert to 256x256 coordinates
                                 osm_json.setdefault(category, []).append(bbox)
                             # if max_features > 0 and len(osm_json[category]) >= max_features:
                             #     break
-            return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': osm_json}
+            return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': json.dumps(osm_json) if osm_json else "{}"}
 
     def __len__(self):
         return self.data_len
