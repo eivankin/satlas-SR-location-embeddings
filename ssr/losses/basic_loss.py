@@ -34,6 +34,7 @@ class CLIPLoss(nn.Module):
             self.sim_model, _ = clip.load("RN50")
 
         self.normalize = Normalize(mean=OPENAI_DATASET_MEAN, std=OPENAI_DATASET_STD)
+        self.cos_emb_loss = nn.CosineEmbeddingLoss()
 
     def forward(self, x, gt):
         x = F.interpolate(x, self.img_size)
@@ -44,8 +45,10 @@ class CLIPLoss(nn.Module):
 
         x_feats = self.sim_model.encode_image(x)
         gt_feats = self.sim_model.encode_image(gt)
-        l1 = l1_loss(x_feats, gt_feats)
-        return l1 * self.loss_weight
+        # l1 = l1_loss(x_feats, gt_feats)
+        # return l1 * self.loss_weight
+        cos_dissim = self.cos_emb_loss(x_feats, gt_feats, torch.ones(x_feats.shape[0]).to(x_feats.device))
+        return cos_dissim * self.loss_weight
 
 @LOSS_REGISTRY.register()
 class SSIMLoss(nn.Module):
