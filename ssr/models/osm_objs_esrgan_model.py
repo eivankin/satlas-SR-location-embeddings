@@ -14,6 +14,7 @@ from basicsr.archs import build_network
 from basicsr.models.srgan_model import SRGANModel
 from basicsr.utils import USMSharp, get_root_logger, imwrite, tensor2img
 from basicsr.utils.registry import MODEL_REGISTRY
+from tqdm import tqdm
 
 from ssr.losses import build_loss
 from ssr.metrics import calculate_metric
@@ -179,14 +180,14 @@ class OSMObjESRGANModel(SRGANModel):
                     if y1 == y2:
                         y1, y2 = (y1, y2+1) if y2 < 128 else (y1-1, y2)
 
-                    gt_extract = gan_gt[b, :, y1:y2, x1:x2]
-                    gen_extract = self.output[b, :, y1:y2, x1:x2]
+                    gt_extract = gan_gt[b, :3, y1:y2, x1:x2]
+                    gen_extract = self.output[b, :3, y1:y2, x1:x2]
                     batch_gt.append(torchvision.transforms.functional.resize(gt_extract, (32,32)))
                     batch_gen.append(torchvision.transforms.functional.resize(gen_extract, (32,32)))
 
             if not batch_gt:  # dirty hack to avoid empty lists: let D compare original tiles
-                batch_gt.append(gan_gt[b, :, :32, :32])
-                batch_gen.append(self.output[b, :, :32, :32])
+                batch_gt.append(gan_gt[b, :3, :32, :32])
+                batch_gen.append(self.output[b, :3, :32, :32])
 
             # list of lists of objects for each batch
             gt_extracted_objs.append(batch_gt)
@@ -219,7 +220,7 @@ class OSMObjESRGANModel(SRGANModel):
 
             # perceptual loss
             if self.cri_perceptual:
-                l_g_percep, l_g_style = self.cri_perceptual(self.output, percep_gt)
+                l_g_percep, l_g_style = self.cri_perceptual(self.output[:, :3, :, :], percep_gt[:, :3, :, :])
                 if l_g_percep is not None:
                     l_g_total += l_g_percep
                     loss_dict['l_g_percep'] = l_g_percep
@@ -260,7 +261,7 @@ class OSMObjESRGANModel(SRGANModel):
 
             # Similarity score loss using some large-scale pretrained model
             if self.clip_sim:
-                l_clip_sim = self.clip_sim(self.output, l1_gt)
+                l_clip_sim = self.clip_sim(self.output[:, :3, :, :], l1_gt[:, :3, :, :])
                 loss_dict['l_clip_sim'] = l_clip_sim
                 l_g_total += l_clip_sim
 

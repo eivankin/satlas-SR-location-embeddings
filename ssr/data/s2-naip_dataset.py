@@ -182,7 +182,7 @@ class S2NAIPDataset(data.Dataset):
             num_naip_bands = min(len(self.s2_bands), 4)
             naip_chip = torchvision.io.read_image(naip_path)[:num_naip_bands, :, :]
 
-            rand_hr_x1, rand_hr_x2, rand_hr_y1, rand_hr_y2 = 0, 0, 128, 128
+            rand_hr_x1, rand_hr_x2, rand_hr_y1, rand_hr_y2 = 0, 128, 0, 128
             if self.rand_crop:
                 rand_hr_x1, rand_hr_x2, rand_hr_y1, rand_hr_y2 = get_random_nonzero_extent(naip_chip)
 
@@ -274,6 +274,7 @@ class S2NAIPDataset(data.Dataset):
 
             osm_json = None
             naip_downscale_factor = 2  # S2-NAIP uses coordinates tied to 512x512 for OSM, we want 256x256
+            min_size = 5
             if osm_path is not None:
                 with open(osm_path) as f:
                     # Convert the format:
@@ -298,21 +299,46 @@ class S2NAIPDataset(data.Dataset):
                             for poly in coords_list:
                                 # poly is a list of linear rings, take the exterior ring (first)
                                 exterior = poly[0]
-                                xs = [int(round(pt[0])) for pt in exterior]
-                                ys = [int(round(pt[1])) for pt in exterior]
+                                xs = [int(round(pt[0] / naip_downscale_factor)) for pt in exterior]
+                                ys = [int(round(pt[1] / naip_downscale_factor)) for pt in exterior]
                                 if not xs or not ys:
                                     continue
-                                x1, x2 = max(min(xs), rand_hr_x1), min(max(xs), rand_hr_x2)
-                                if x2 - x1 < 2:
+                                x1, x2 = max(min(xs), rand_hr_y1), min(max(xs), rand_hr_y2)
+                                if x2 - x1 < min_size:
                                     continue
-                                y1, y2 = max(min(ys), rand_hr_y1), min(max(ys), rand_hr_y2)
-                                if y2 - y1 < 2:
+                                y1, y2 = max(min(ys), rand_hr_x1), min(max(ys), rand_hr_x2)
+                                if y2 - y1 < min_size:
                                     continue
-                                bbox = [x1, y1, x2, y2]
-                                bbox = [int(coord / naip_downscale_factor) for coord in bbox]  # convert to 256x256 coordinates
+                                bbox = [x1 - rand_hr_y1, y1 - rand_hr_x1, x2 - rand_hr_y1, y2 - rand_hr_x1]  # [x1, y1, x2, y2]
                                 osm_json.setdefault(category, []).append(bbox)
                             # if max_features > 0 and len(osm_json[category]) >= max_features:
                             #     break
+            if False and osm_json and random.random() < 0.05:
+                import matplotlib.pyplot as plt
+                # Draw LR, HR and OSM bboxes (different colors for each category)
+                # Save plot as png {phase}_{index}.png
+                fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+                axs[0].imshow(img_S2.permute(1, 2, 0).cpu().numpy())
+                axs[0].set_title(f'LR (S2) ({rand_lr_x1}, {rand_lr_y1}, {rand_lr_x2}, {rand_lr_y2})')
+                axs[1].imshow(img_HR.permute(1, 2, 0).cpu().numpy())
+                axs[1].set_title(f'HR (NAIP) ({rand_hr_x1}, {rand_hr_y1}, {rand_hr_x2}, {rand_hr_y2})')
+
+                colors = ['r', 'b', 'y', 'm', 'c']
+                for idx, (cat, bboxes) in enumerate(osm_json.items()):
+                    color = colors[idx % len(colors)]
+                    for bbox in bboxes:
+                        x1, y1, x2, y2 = bbox
+                        rect = plt.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2, edgecolor=color,
+                                             facecolor='none', label=cat)
+                        axs[1].add_patch(rect)
+                handles = [plt.Line2D([0], [0], color=colors[i % len(colors)], lw=2, label=cat) for i, cat in
+                           enumerate(osm_json.keys())]
+                axs[1].legend(handles=handles)
+
+                plt.tight_layout()
+                plt.savefig(f'train_examples/{self.split}_{index}.png')
+                print(f'Saved {self.split}_{index}.png')
+                plt.close(fig)
             return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': json.dumps(osm_json) if osm_json else "{}"}
 
     def __len__(self):
