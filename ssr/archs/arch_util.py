@@ -20,6 +20,158 @@ from basicsr.ops.dcn import ModulatedDeformConvPack, modulated_deform_conv
 from basicsr.utils import get_root_logger
 
 
+def crop_images(img, cropping_size_h=256, cropping_size_w=256, stride=256, device='cpu'):
+    """
+    Crop input images in a PyTorch tensor into smaller patches and concatenate them together.
+
+    Args:
+        img (torch.Tensor): Input tensor containing a batch of images with shape (N, C, H, W).
+        cropping_size_h (int): Height of the cropped patches (default is 256).
+        cropping_size_w (int): Width of the cropped patches (default is 256).
+        stride (int): Stride for sliding the cropping window (default is 256).
+        device (str): Device on which to perform the cropping and concatenation (default is 'cpu').
+
+    Returns:
+        torch.Tensor: Tensor containing concatenated patches with shape (N * P, C, cropping_size_h, cropping_size_w),
+                     where P is the number of patches per image.
+    """
+
+    # Clone the input tensor to avoid modifying the original data
+    img = img.clone()
+
+    # Get the number of images in the batch
+    N = img.shape[0]
+
+    # Initialize an empty tensor to store the concatenated patches
+    batch_patches = torch.tensor([]).to(device)
+
+    # Loop through each image in the batch
+    for l in range(N):
+        # Crop the image into smaller patches
+        crops = crop_image(img[l, :, :, :], cropping_size_h=cropping_size_h, cropping_size_w=cropping_size_w,
+                           stride=stride, device=device)
+
+        # Concatenate the patches to the batch_patches tensor
+        batch_patches = torch.cat((batch_patches, crops), 0)
+
+    return batch_patches
+
+
+def merge_patches_into_image(patches, num_rows=3, num_cols=3, device='cpu'):
+    """
+    Merge 2D patches into complete images.
+
+    Args:
+        patches (torch.Tensor): Input tensor of patches with shape (batch_size, channels, patch_height, patch_width).
+        num_rows (int): Number of rows of patches in each image (default is 3).
+        num_cols (int): Number of columns of patches in each image (default is 3).
+        device (str): Device on which to perform the merging (default is 'cpu').
+
+    Returns:
+        torch.Tensor: Tensor containing merged images with shape (batch_size//num_patches_per_img, channels, height, width).
+    """
+    batch_size, channels, patch_height, patch_width = patches.size()
+    num_patches_per_img = num_rows * num_cols
+
+    # Calculate the dimensions of the merged images
+    merged_height = patch_height * num_rows
+    merged_width = patch_width * num_cols
+
+    # Initialize an empty tensor to store the merged images
+    merged_images = torch.empty((batch_size // num_patches_per_img, channels, merged_height, merged_width),
+                                device=device)
+
+    for k in range(batch_size // num_patches_per_img):  # for each image
+        merged_image = torch.tensor([]).to(device=device)
+
+        for r in range(num_rows):  # each row in each image
+            img_row = patches[k * num_patches_per_img + r * num_cols]
+
+            for c in range(1, num_cols):
+                img_row = torch.cat((img_row, patches[k * num_patches_per_img + r * num_cols + c]), dim=-1)
+
+            merged_image = torch.cat((merged_image, img_row), dim=-2)  # concatenate rows
+
+        merged_images[k] = merged_image
+
+    return merged_images.to(device=device)
+
+
+def crop_image(img, cropping_size_h=256, cropping_size_w=256, stride=256, device='cpu'):
+    """
+    Crop input image tensor into smaller patches.
+
+    Args:
+        img (torch.Tensor): Input tensor representing an image with shape (C, H, W).
+        cropping_size_h (int): Height of the cropped patches (default is 256).
+        cropping_size_w (int): Width of the cropped patches (default is 256).
+        stride (int): Stride for sliding the cropping window (default is 256).
+        device (str): Device on which to perform the cropping (default is 'cpu').
+
+    Returns:
+        torch.Tensor: Tensor containing cropped patches with shape (P, C, cropping_size_h, cropping_size_w),
+                     where P is the number of patches.
+    """
+    # Get the height and width of the input image
+    img_h = img.shape[1]
+    img_w = img.shape[2]
+
+    # Initialize an empty tensor to store the cropped patches
+    crops = torch.tensor([]).to(device)
+
+    # Initialize starting and ending indices for height
+    start_h = 0
+    end_h = cropping_size_h
+
+    # Iterate over height with a sliding window
+    while end_h <= img_h:
+        # Initialize starting and ending indices for width
+        start_w = 0
+        end_w = cropping_size_w
+
+        # Iterate over width with a sliding window
+        while end_w <= img_w:
+            # Crop the image
+            crop = img[:, start_h:end_h, start_w:end_w].to(device)
+
+            # Concatenate the crop to the crops tensor
+            crops = torch.cat((crops, crop.unsqueeze(0)))
+
+            # Update the width indices
+            start_w += stride
+            end_w += stride
+
+        # Update the height indices
+        start_h += stride
+        end_h += stride
+
+    return crops
+
+
+def make_layer_lp(basic_block, num_basic_block, **kwarg):
+    """Make layers by stacking the same blocks with local padding.
+
+    Args:
+        basic_block (nn.module): nn.module class for basic block.
+        num_basic_block (int): number of blocks.
+
+    Returns:
+        nn.Sequential: Stacked blocks in nn.Sequential.
+    """
+    layers = []
+    for _ in range(num_basic_block):
+        layers.append(basic_block(**kwarg))
+    return Sequential_LP(*layers)
+
+
+class Sequential_LP(nn.Sequential):
+
+    def forward(self, input, image_location='None'):
+        for module in self:
+            input = module(input, image_location)
+        return input
+
+
 class OneHot(nn.Module):
     """ One-hot encoder. """
 

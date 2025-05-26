@@ -679,7 +679,7 @@ class DenoisingModel(SRModel):
         #     self.log_dict = OrderedDict()
 
     def feed_data(self, data):
-        upsample = nn.Upsample(scale_factor=4, mode='nearest')
+        upsample = nn.Upsample(scale_factor=4, mode='bicubic')
         self.lr = LQ = upsample(data["lr"].to(self.device).float()/255)
         self.gt = GT = data.get("hr")
         if GT is not None:
