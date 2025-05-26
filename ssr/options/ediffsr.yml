@@ -1,6 +1,6 @@
 # General Settings
-name: bpp-loss-esrgan
-model_type: OSMObjESRGANModel
+name: ediffsr
+model_type: DenoisingModel
 scale: 4
 num_gpu: auto
 manual_seed: 0
@@ -15,6 +15,20 @@ feed_disc_lr: True
 
 # Weight for OSM object loss within GAN loss calculation
 osm_obj_weight: 0.3
+
+sde:
+  max_sigma: 50
+  T: 100
+  schedule: cosine # linear, cosine
+  eps: 0.005
+
+degradation: # for some synthetic dataset that only have GTs
+  # for denoising
+  sigma: 25
+  noise_type: G # Gaussian noise: G
+
+  # for super-resolution
+  scale: 4
 
 # Dataset and Dataloader Settings
 datasets:
@@ -88,23 +102,16 @@ test_datasets:
 
 # Network Structures
 network_g:
-  type: SSR_RRDBNet
-  num_in_ch: 3  # number of Sentinel2 images * 3 channels (RGB)
-  num_out_ch: 3
-  num_feat: 64
-  num_block: 23
-  num_grow_ch: 32
-
-network_d:
-  type: OSMObjDiscriminator
-  num_in_ch: 6  # RGB of Real/Fake image + [optional] old high-res image + [optional] low-res images
-  num_feat: 64
-  skip_connection: True
+  type: ConditionalNAFNet
+  width: 64
+  enc_blk_nums: [ 14, 1, 1, 1 ]
+  middle_blk_num: 1
+  dec_blk_nums: [ 1, 1, 1, 1 ]
 
 # Load in existing weights to the generator and discriminator
 # Uncomment pretrain_network_g and pretrain_network_d and add paths to your weights
 path:
-  pretrain_network_g: weights/esrgan_1S2.pth
+  pretrain_network_g: weights/ediffsr.pth
   param_key_g: params_ema
   strict_load_g: false
 #  pretrain_network_d: weights/net_d_pre.pth
@@ -167,9 +174,6 @@ train:
   clip_opt:
     type: CLIPLoss
     clip_loss_model: ViT-B-16-SigLIP-256
-  bpp_opt:
-    type: BPPLoss
-    loss_weight: !!float 5e-3
 
   net_d_iters: 1
   net_d_init_iters: 0
@@ -199,13 +203,6 @@ val:
      clipscore:
        type: calculate_clipscore
        clip_model: clip-ViT-B/16  # see ssr/metrics/clipscore.py for currently supported models
-     jpeg_size:
-       type: calculate_jpeg_size
-       quality: 95
-       better: lower
-     bpp:
-      type: calculate_bpp
-      better: lower
 
 # Testing Settings
 test:
@@ -230,13 +227,6 @@ test:
      clipscore:
        type: calculate_clipscore
        clip_model: siglip-ViT-SO400M-14  # see ssr/metrics/clipscore.py for currently supported models
-     jpeg_size:
-       type: calculate_jpeg_size
-       quality: 95
-       better: lower
-     bpp:
-       type: calculate_bpp
-       better: lower
 
 # Logging Settings
 logger:
