@@ -46,5 +46,5 @@ def size(image: Union[Tensor, Image.Image], **kwargs) -> float:
     return size_after / size_before
 
 @METRIC_REGISTRY.register()
-def calculate_jpeg_size(img, img2, quality):
+def calculate_jpeg_size(img, img2, quality, **kwargs):
     return size(img, quality=quality)

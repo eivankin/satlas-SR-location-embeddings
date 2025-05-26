@@ -232,9 +232,11 @@ test:
        clip_model: siglip-ViT-SO400M-14  # see ssr/metrics/clipscore.py for currently supported models
      jpeg_size:
        type: calculate_jpeg_size
-       quality: 90
+       quality: 95
+       better: lower
      bpp:
        type: calculate_bpp
+       better: lower
 
 # Logging Settings
 logger:

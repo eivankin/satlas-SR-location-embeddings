@@ -7,7 +7,7 @@ from basicsr.utils.registry import METRIC_REGISTRY
 compression_model = mbt2018(8, pretrained=True)
 
 @METRIC_REGISTRY.register()
-def calculate_bpp(img, img2):
+def calculate_bpp(img, img2, **kwargs):
     tensor = torch.as_tensor(img).permute(2, 0, 1).unsqueeze(0).float()/255
     out_net = compression_model.forward(tensor)
     size = out_net['x_hat'].size()

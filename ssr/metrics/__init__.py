@@ -6,8 +6,10 @@ from basicsr.metrics.psnr_ssim import calculate_psnr, calculate_ssim
 from .clipscore import calculate_clipscore 
 from .cpsnr import calculate_cpsnr
 from .lpips import calculate_lpips
+from .jpeg_size import calculate_jpeg_size
+from .bpp import calculate_bpp
 
-__all__ = ['calculate_psnr', 'calculate_ssim', 'calculate_clipscore', 'calculate_cpsnr', 'calculate_lpips']
+__all__ = ['calculate_psnr', 'calculate_ssim', 'calculate_clipscore', 'calculate_cpsnr', 'calculate_lpips', 'calculate_jpeg_size', 'calculate_bpp']
 
 
 def calculate_metric(data, opt):
