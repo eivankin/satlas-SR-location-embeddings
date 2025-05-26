@@ -202,8 +202,10 @@ val:
      jpeg_size:
        type: calculate_jpeg_size
        quality: 95
+       better: lower
      bpp:
       type: calculate_bpp
+      better: lower
 
 # Testing Settings
 test:
