@@ -110,6 +110,11 @@ class OSMObjESRGANModel(SRGANModel):
         else:
             self.clip_sim = None
 
+        if train_opt.get('bpp_opt'):
+            self.bpp_loss = build_loss(train_opt['bpp_opt']).to(self.device)
+        else:
+            self.bpp_loss = None
+
         self.net_d_iters = train_opt.get('net_d_iters', 1)
         self.net_d_init_iters = train_opt.get('net_d_init_iters', 0)
 
@@ -264,6 +269,11 @@ class OSMObjESRGANModel(SRGANModel):
                 l_clip_sim = self.clip_sim(self.output[:, :3, :, :], l1_gt[:, :3, :, :])
                 loss_dict['l_clip_sim'] = l_clip_sim
                 l_g_total += l_clip_sim
+
+            if self.bpp_loss:
+                l_bpp = self.bpp_loss(self.output, l1_gt)
+                loss_dict['l_bpp'] = l_bpp
+                l_g_total += l_bpp
 
             l_g_total.backward()
             self.optimizer_g.step()

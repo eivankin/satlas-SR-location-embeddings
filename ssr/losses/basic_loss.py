@@ -1,3 +1,5 @@
+import math
+
 import clip
 import torch
 import kornia
@@ -5,6 +7,8 @@ import open_clip
 import torch.nn as nn
 from torch.nn import functional as F
 from torchvision.transforms import Normalize
+
+from compressai.zoo import mbt2018
 
 from basicsr.losses.loss_util import weighted_loss
 from basicsr.utils.registry import LOSS_REGISTRY
@@ -15,6 +19,23 @@ OPENAI_DATASET_STD = (0.26862954, 0.26130258, 0.27577711)
 @weighted_loss
 def l1_loss(pred, target):
     return F.l1_loss(pred, target, reduction='none')
+
+@LOSS_REGISTRY.register()
+class BPPLoss(nn.Module):
+    def __init__(self, loss_weight=1.0):
+        super(BPPLoss, self).__init__()
+        self.loss_weight = loss_weight
+
+        self.compression_model = mbt2018(8, pretrained=True)
+
+    def forward(self, x, gt):
+        """Bpp calculation from https://github.com/InterDigitalInc/CompressAI/blob/master/examples/CompressAI%20Inference%20Demo.ipynb"""
+        out_net = self.compression_model.forward(x)
+        size = out_net['x_hat'].size()
+        num_pixels = size[0] * size[2] * size[3]
+        return sum(torch.log(likelihoods).sum() / (-math.log(2) * num_pixels)
+                   for likelihoods in out_net['likelihoods'].values())
+
 
 @LOSS_REGISTRY.register()
 class CLIPLoss(nn.Module):
