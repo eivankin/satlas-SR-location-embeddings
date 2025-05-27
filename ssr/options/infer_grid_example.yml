@@ -1,30 +1,52 @@
 # General Settings
 name: infer_grid_example
-model_type: SSRESRGANModel
+model_type: DenoisingModel #DenoisingModel #LocMatchESRGANModel #OSMObjESRGANModel
 scale: 4
 num_gpu: auto
 manual_seed: 0
 
 # Inference Settings
 
+sde:
+  max_sigma: 50
+  T: 100
+  schedule: cosine # linear, cosine
+  eps: 0.005
+
+degradation: # for some synthetic dataset that only have GTs
+  # for denoising
+  sigma: 25
+  noise_type: G # Gaussian noise: G
+
+  # for super-resolution
+  scale: 4
+
 # Root directory for low-res images you want super-resolved.
-data_dir: super_resolution_2023-12-08/test_set/sentinel2/
+#data_dir: ssr-data/ssr-data/test_set/sentinel2/
+#data_dir: s2-tiles/
+data_dir: sf_experiment/tiles_q18/s2-tiles-overlap-00-32/input #innopolis_experiment/new_tiles/s2-tiles-overlap-00-32/input #sf_experiment/tiles_q18/s2-tiles-overlap-00-32/input
+overlap: 0
+chunk_size: 32
 
-n_lr_images: 8
+n_lr_images: 1
 
-save_path: testing_infer_grid/
+save_path: sf_experiment/tiles_q18/s2-tiles-overlap-00-32/output_ediffsr #innopolis_experiment/new_tiles/s2-tiles-overlap-00-32/output_ediffsr #sf_experiment/tiles_q18/s2-tiles-overlap-00-32/output_bpp
 
 # Structure of the generator you want to use for inference
 network_g:
-  type: SSR_RRDBNet
-  num_in_ch: 24  # number of Sentinel2 images * 3 channels (RGB)
-  num_out_ch: 3
-  num_feat: 64
-  num_block: 23
-  num_grow_ch: 32
+  type: ConditionalNAFNet #ConditionalNAFNet #SSR_RRDBNet_LocAttn #SSR_RRDBNet
+  width: 64
+  enc_blk_nums: [ 14, 1, 1, 1 ]
+  middle_blk_num: 1
+  dec_blk_nums: [ 1, 1, 1, 1 ]
+#  num_in_ch: 3  # number of Sentinel2 images * 3 channels (RGB)
+#  num_out_ch: 3
+#  num_feat: 64
+#  num_block: 23
+#  num_grow_ch: 32
 
 # Load pretrained weights into the generator that is defined above
 path:
-  pretrain_network_g: experiments/sample_net_g.pth
+  pretrain_network_g: weights/ediffsr.pth
   param_key_g: params_ema
-  strict_load_g: true
+  strict_load_g: false

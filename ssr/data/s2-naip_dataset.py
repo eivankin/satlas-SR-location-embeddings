@@ -253,8 +253,12 @@ class S2NAIPDataset(data.Dataset):
                             s2_img = torch.from_numpy(src.read(self.s2_bands))
                             s2_img = s2_img[:, rand_lr_x1:rand_lr_x2, rand_lr_y1:rand_lr_y2]
 
-                        s2_img = torch.reshape(s2_img, (s2_img.shape[0], -1, 32, 32)).permute(1,0,2,3)
-                        assert s2_img.shape == (self.n_s2_images, len(self.s2_bands), 32, 32), s2_img.shape # todo: remove
+                        # s2_img = torch.reshape(s2_img, (self.n_s2_images, -1, 32, 32))#.permute(1,0,2,3)
+                        # stack groups of 3 channels along n_images axis
+                        s2_img = torch.stack([s2_img[(i * 3):(i * 3) + 3] for i in range(self.n_s2_images)])
+                        expected_channels = 3
+                        expected_shape = (self.n_s2_images, expected_channels, 32, 32)
+                        assert s2_img.shape == expected_shape, (s2_img.shape, expected_shape)
 
                     if i == 0:
                         s2_tensor = s2_img
@@ -342,12 +346,12 @@ class S2NAIPDataset(data.Dataset):
                                 osm_json.setdefault(category, []).append(bbox)
                             # if max_features > 0 and len(osm_json[category]) >= max_features:
                             #     break
-            if self.plot_inputs and osm_json and random.random() < 0.05:
+            if self.plot_inputs and osm_json and random.random() < 0.3:
                 import matplotlib.pyplot as plt
                 # Draw LR, HR and OSM bboxes (different colors for each category)
                 # Save plot as png {phase}_{index}.png
                 fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-                axs[0].imshow(img_S2.permute(1, 2, 0).cpu().numpy())
+                axs[0].imshow(img_S2.permute(1, 2, 0)[:, :, :3].cpu().numpy())
                 axs[0].set_title(f'LR (S2) | crop ({rand_lr_x1}, {rand_lr_y1}, {rand_lr_x2}, {rand_lr_y2}) | channels {self.s2_bands}')
                 axs[1].imshow(img_HR.permute(1, 2, 0).cpu().numpy())
                 axs[1].set_title(f'HR (NAIP) | crop ({rand_hr_x1}, {rand_hr_y1}, {rand_hr_x2}, {rand_hr_y2}) | channels {self.naip_bands}')
@@ -369,7 +373,7 @@ class S2NAIPDataset(data.Dataset):
                 print(f'Saved {self.split}_{index}.png')
                 plt.close(fig)
 
-            return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': json.dumps(osm_json) if osm_json else "{}", "coords": torch.tensor(coordinates)}
+            return {'hr': img_HR, 'lr': img_S2, 'Index': index, 'Phase': self.split, 'Chip': zoom17_tile, 'osm': json.dumps(osm_json) if osm_json else "{}", "coords": torch.tensor(coordinates), 'chip': chip_name}
 
     def __len__(self):
         return self.data_len

@@ -3,9 +3,9 @@ import random
 import skimage.io
 import numpy as np
 
-def format_s2naip_data(s2_data, n_s2_images, device):
+def format_s2naip_data(s2_data, n_s2_images, device, tile_size=32):
     # Reshape to be Tx32x32x3.
-    s2_chunks = np.reshape(s2_data, (-1, 32, 32, 3))
+    s2_chunks = np.reshape(s2_data, (-1, tile_size, tile_size, 3))
 
     # Save one image to a variable for later saving.
     s2_image = s2_chunks[0]

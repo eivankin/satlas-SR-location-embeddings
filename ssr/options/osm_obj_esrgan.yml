@@ -22,26 +22,29 @@ datasets:
     name: train
     type: S2NAIPDataset
 
-    sentinel2_path: custom_dataset/prepared/train/sentinel2_32617 # fixme: use all zones
-    naip_path: custom_dataset/prepared/train/naip_32617
+    sentinel2_path: custom_dataset/prepared/train/sentinel2
+    naip_path: custom_dataset/prepared/train/naip
 
 #    tile_weights: super_resolution_2023-12-08/train_tile_weights/urban_set_weights.json
 
-    osm_objs_path: custom_dataset/prepared/train/openstreetmap_32617
+    osm_objs_path: custom_dataset/prepared/train/openstreetmap
 
     # Min number of OSM features per tile to be used. 
     # NOTE: Number of samples is currently clipped to this number, which reduces dataset size.
     n_osm_objs: 1
 
     use_shuffle: True #False  # shuffle must be false if using tile_weights
-    rand_crop: False #True  # random cropping and resizing augmentation (training only), fixme: crop zero pixels out & change to true
+    rand_crop: True  # random cropping and resizing augmentation (training only)
 
-    num_worker_per_gpu: 16
-    batch_size_per_gpu: 16
+    plot_inputs: False
+
+    num_worker_per_gpu: 1
+    batch_size_per_gpu: 2
 
     n_s2_images: 1
 
-    s2_bands: [39, 38, 37] # RGB of q_18 merge
+    s2_bands: [39, 38, 37] # [39, 38, 37] for RGB of q_18 merge, [35, 34, 33] for RGB for q_50, [40, 39, 38] for NIR,R,G for q_18
+    naip_bands: [0, 1, 2] # [0, 1, 2] for RGB, [3, 0, 1] NIR,R,G
 
     io_backend:
       type: disk
@@ -50,14 +53,15 @@ datasets:
      name: validation
      type: S2NAIPDataset
 
-     sentinel2_path: custom_dataset/prepared/val/sentinel2_32618
-     naip_path: custom_dataset/prepared/val/naip_32618
+     sentinel2_path: custom_dataset/prepared/val/sentinel2
+     naip_path: custom_dataset/prepared/val/naip
 
      use_shuffle: False
 
      n_s2_images: 1
 
-     s2_bands: [39, 38, 37] # RGB of q_18 merge
+     s2_bands: [39, 38, 37] # [39, 38, 37] for RGB of q_18 merge, [35, 34, 33] for RGB for q_50, [40, 39, 38] for NIR,R,G for q_18
+     naip_bands: [0, 1, 2] # [0, 1, 2] for RGB, [3, 0, 1] NIR,R,G
 
      io_backend:
        type: disk
@@ -69,12 +73,13 @@ test_datasets:
      phase: test
      scale: 4
 
-     sentinel2_path: custom_dataset/prepared/test/sentinel2_32619
-     naip_path: custom_dataset/prepared/test/naip_32619
+     sentinel2_path: custom_dataset/prepared/test/sentinel2
+     naip_path: custom_dataset/prepared/test/naip
 
      use_shuffle: False
 
-     s2_bands: [39, 38, 37] # RGB of q_18 merge
+     s2_bands: [39, 38, 37] # [39, 38, 37] for RGB of q_18 merge, [35, 34, 33] for RGB for q_50, [40, 39, 38] for NIR,R,G for q_18
+     naip_bands: [0, 1, 2] # [0, 1, 2] for RGB, [3, 0, 1] NIR,R,G
 
      n_s2_images: 1
 
@@ -86,26 +91,27 @@ network_g:
   type: SSR_RRDBNet
   num_in_ch: 3  # number of Sentinel2 images * 3 channels (RGB)
   num_out_ch: 3
-  num_feat: 256
-  num_block: 30
-  num_grow_ch: 128
+  num_feat: 64
+  num_block: 23
+  num_grow_ch: 32
 
 network_d:
   type: OSMObjDiscriminator
   num_in_ch: 6  # RGB of Real/Fake image + [optional] old high-res image + [optional] low-res images
-  num_feat: 256
+  num_feat: 64
   skip_connection: True
 
 # Load in existing weights to the generator and discriminator
 # Uncomment pretrain_network_g and pretrain_network_d and add paths to your weights
 path:
-  #pretrain_network_g: experiments/sample_net_g.pth 
+  pretrain_network_g: weights/esrgan_1S2.pth
   param_key_g: params_ema
   strict_load_g: false
-  #pretrain_network_d: experiments/sample_net_d.pth
+#  pretrain_network_d: weights/net_d_pre.pth
   param_key_d: params
   strict_load_d: true
   resume_state: ~
+  visualization: .
 
 # Training Settings
 train:
@@ -123,11 +129,11 @@ train:
 
   scheduler:
     type: MultiStepLR
-    milestones: [400000]
+    milestones: [10000]
     gamma: 0.5
 
-  total_iter: 100000000
-  warmup_iter: -1  # no warm up todo: warmup where only missing weights (projection, attention?) is trained
+  total_iter: 15000
+  warmup_iter: -1  # no warm up
 
   # Losses
   pixel_opt:
@@ -168,8 +174,9 @@ train:
 
 # Validation Settings
 val:
-   val_freq: !!float 5e5
+   val_freq: !!float 1e3
    save_img: True
+   pbar: True
 
    metrics:
      psnr:
@@ -180,6 +187,16 @@ val:
        type: calculate_ssim
        crop_border: 4
        test_y_channel: false
+     cpsnr:
+       type: calculate_cpsnr
+       crop_border: 4
+       test_y_channel: false
+#     lpips:
+#       type: calculate_lpips
+#       lpips_model: vgg
+     clipscore:
+       type: calculate_clipscore
+       clip_model: clip-ViT-B/16  # see ssr/metrics/clipscore.py for currently supported models
 
 # Testing Settings
 test:
@@ -207,8 +224,8 @@ test:
 
 # Logging Settings
 logger:
-  print_freq: 100
-  save_checkpoint_freq: !!float 5e3 
+  print_freq: 50
+  save_checkpoint_freq: !!float 1e3
   use_tb_logger: true
   wandb:
     project: multisat

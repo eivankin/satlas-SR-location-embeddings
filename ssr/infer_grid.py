@@ -11,6 +11,29 @@ from ssr.utils.infer_utils import format_s2naip_data, stitch
 from ssr.utils.options import yaml_load
 from ssr.utils.model_utils import build_network
 
+import satclip.satclip.load as satclip_load
+
+import json
+import torch
+
+class TileCoordsLookup:
+    def __init__(self, json_path, device="cpu"):
+        with open(json_path, "r") as f:
+            self.coords = json.load(f)
+        self.device = device
+
+    def row_col_to_coords(self, row, col):
+        key = f"{row}_{col}"
+        if key in self.coords:
+            lat, lon = self.coords[key]
+            return torch.tensor([[lat, lon]], dtype=torch.float32, device=self.device)
+        else:
+            # Return zeros if not found
+            return torch.tensor([[0.0, 0.0]], dtype=torch.float32, device=self.device)
+
+def row_col_to_coords(row, col):
+    return tile_coords_lookup.row_col_to_coords(row, col)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -23,8 +46,10 @@ if __name__ == "__main__":
     opt = yaml_load(args.opt)
 
     data_dir = opt['data_dir']  # root directory containing the low-res images you want to super-resolve
+    overlap = opt.get("overlap", 0)
     n_lr_images = opt['n_lr_images']  # number of low-res images as input to the model; must be the same as when the model was trained
     save_path = opt['save_path']  # directory where model outputs will be saved
+    print(save_path)
 
     # Define the generator model, based on the type and parameters specified in the config.
     model = build_network(opt)
@@ -51,6 +76,11 @@ if __name__ == "__main__":
         save_dir = os.path.join(save_path, tile)
         save_fn = save_dir + '/' + idx
         os.makedirs(save_dir, exist_ok=True)
+
+        tile_coords_lookup = TileCoordsLookup(data_dir + "/" + tile + "/tile_coords.json", device=device)
+
+        row, col = get_row_col(png)
+        image_location = row_col_to_image_location(row, col, s2_grid_size[0] - 1, s2_grid_size[1] - 1)
 
         im = skimage.io.imread(png)
 

@@ -1,6 +1,7 @@
 from ssr.archs.ediffsr_arch import ConditionalNAFNet
 from ssr.archs.highresnet_arch import HighResNet
 from ssr.archs.rrdbnet_lp_arch import SSR_RRDBNet_LP
+from ssr.archs.rrdbnet_satclip_arch import SSR_RRDBNet_LocAttn, SSR_RRDBNet_LocAttn_Big
 from ssr.archs.srcnn_arch import SRCNN
 from ssr.archs.rrdbnet_arch import SSR_RRDBNet
 
@@ -26,6 +27,20 @@ def build_network(opt):
 
         model = SSR_RRDBNet_LP(num_in_ch=n_lr_images*3, num_out_ch=3, num_feat=num_feat, num_block=num_block,
                             num_grow_ch=num_grow_ch, scale=scale, padding_mode='local')
+
+    elif model_type == 'SSR_RRDBNet_LocAttn':
+        num_feat = int(model_opt['num_feat'])
+        num_block = int(model_opt['num_block'])
+        num_grow_ch = int(model_opt['num_grow_ch'])
+        model = SSR_RRDBNet_LocAttn(num_in_ch=n_lr_images*3, num_out_ch=3, num_feat=num_feat, num_block=num_block,
+                            num_grow_ch=num_grow_ch, scale=scale)
+
+    elif model_type == 'SSR_RRDBNet_LocAttn_Big':
+        num_feat = int(model_opt['num_feat'])
+        num_block = int(model_opt['num_block'])
+        num_grow_ch = int(model_opt['num_grow_ch'])
+        model = SSR_RRDBNet_LocAttn_Big(num_in_ch=n_lr_images*3, num_out_ch=3, num_feat=num_feat, num_block=num_block,
+                            num_grow_ch=num_grow_ch, scale=scale)
 
     elif model_type == 'ConditionalNAFNet':
         width = int(model_opt['width'])

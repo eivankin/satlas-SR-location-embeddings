@@ -39,7 +39,7 @@ datasets:
     plot_inputs: False
 
     num_worker_per_gpu: 1
-    batch_size_per_gpu: 1
+    batch_size_per_gpu: 2
 
     n_s2_images: 1
 
@@ -104,7 +104,7 @@ network_d:
 # Load in existing weights to the generator and discriminator
 # Uncomment pretrain_network_g and pretrain_network_d and add paths to your weights
 path:
-  pretrain_network_g: weights/esrgan_1S2.pth
+  pretrain_network_g: weights/new_arch/rgb/net_g_6000.pth
   param_key_g: params_ema
   strict_load_g: false
 #  pretrain_network_d: weights/net_d_pre.pth
@@ -173,7 +173,7 @@ train:
 
 # Validation Settings
 val:
-   val_freq: !!float 1e3
+   val_freq: !!float 3e2
    save_img: True
    pbar: True
 
@@ -223,8 +223,8 @@ test:
 
 # Logging Settings
 logger:
-  print_freq: 50
-  save_checkpoint_freq: !!float 1e3
+  print_freq: 10
+  save_checkpoint_freq: !!float 3e2
   use_tb_logger: true
   wandb:
     project: multisat

@@ -54,6 +54,13 @@ class LocMatchESRGANModel(SRGANModel):
         self.osm_obj_weight = opt['osm_obj_weight']
         self.n_osm_objs = opt['datasets']['train']['n_osm_objs']
 
+        satclip_ckpt = self.opt.get('satclip_ckpt', None)
+        if satclip_ckpt is None:
+            # Default to SatCLIP-ViT16-L40 from HuggingFace Hub
+            satclip_ckpt = hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt")
+        self.satclip_model = get_satclip(satclip_ckpt, device=self.device)
+        self.satclip_model.eval()
+
     def init_training_settings(self):
         train_opt = self.opt['train']
 
@@ -86,13 +93,6 @@ class LocMatchESRGANModel(SRGANModel):
 
         self.net_g.train()
         self.net_d.train()
-
-        satclip_ckpt = self.opt.get('satclip_ckpt', None)
-        if satclip_ckpt is None:
-            # Default to SatCLIP-ViT16-L40 from HuggingFace Hub
-            satclip_ckpt = hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt")
-        self.satclip_model = get_satclip(satclip_ckpt, device=self.device)
-        self.satclip_model.eval()
 
         # define losses
         if train_opt.get('pixel_opt'):
@@ -441,7 +441,7 @@ class LocMatchESRGANModel(SRGANModel):
 
         for idx, val_data in enumerate(dataloader):
             # TODO: the savename logic below does not work for val batch size > 1
-            img_name = str(idx)
+            img_name = val_data["chip"][0] #str(idx)
 
             self.feed_data(val_data)
             self.test()

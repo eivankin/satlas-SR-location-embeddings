@@ -397,7 +397,7 @@ class OSMObjESRGANModel(SRGANModel):
 
         for idx, val_data in enumerate(dataloader):
             # TODO: the savename logic below does not work for val batch size > 1
-            img_name = str(idx)
+            img_name = val_data["chip"][0] #str(idx)
 
             self.feed_data(val_data)
             self.test()

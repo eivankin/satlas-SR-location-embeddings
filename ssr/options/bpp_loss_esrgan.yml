@@ -104,7 +104,7 @@ network_d:
 # Load in existing weights to the generator and discriminator
 # Uncomment pretrain_network_g and pretrain_network_d and add paths to your weights
 path:
-  pretrain_network_g: weights/esrgan_1S2.pth
+  pretrain_network_g: weights/bpp/net_g_2000.pth
   param_key_g: params_ema
   strict_load_g: false
 #  pretrain_network_d: weights/net_d_pre.pth
@@ -236,6 +236,9 @@ test:
        better: lower
      bpp:
        type: calculate_bpp
+       better: lower
+     compressed_size:
+       type: calculate_compressed_size
        better: lower
 
 # Logging Settings

@@ -580,18 +580,18 @@ class DenoisingModel(SRModel):
         self.is_train = False
         # super(DenoisingModel, self).__init__(opt)
 
-        if opt["dist"]:
+        if opt.get("dist"):
             self.rank = torch.distributed.get_rank()
         else:
             self.rank = -1  # non dist training
-        train_opt = opt["train"]
+        train_opt = opt.get("train")
 
         self.opt['scale'] = 4
         self.opt['n_lr_images'] = 1
 
         # define network and load pretrained models
         self.model = build_network(self.opt).to(self.device)
-        if opt["dist"]:
+        if opt.get("dist"):
             self.model = DistributedDataParallel(
                 self.model, device_ids=[torch.cuda.current_device()]
             )
@@ -818,7 +818,7 @@ class DenoisingModel(SRModel):
 
         for idx, val_data in enumerate(dataloader):
             # TODO: the savename logic below does not work for val batch size > 1
-            img_name = str(idx)
+            img_name = val_data["chip"][0] #str(idx)
 
             self.feed_data(val_data)
             self.test()
