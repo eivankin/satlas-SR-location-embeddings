@@ -175,7 +175,7 @@ loader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=Fal
 # --- Model ---
 model = smp.UnetPlusPlus(
     encoder_name="timm-efficientnet-b8",
-    encoder_weights="imagenet",
+    encoder_weights=None,
     in_channels=3,
     classes=1,
     activation=None
